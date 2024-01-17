@@ -15,9 +15,17 @@ import java.sql.SQLException;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import java.util.Properties;
+
 public class ClientHandler implements Runnable {
 
     private Socket clientSocket;
+    
+    private static final String ADMIN_TOPIC = "evote.admin";
+    private static final String VOTING_TOPIC = "evote.client";
 
     public ClientHandler(Socket clientSocket) {
         this.clientSocket = clientSocket;
@@ -32,16 +40,18 @@ public class ClientHandler implements Runnable {
             String clientMessage;
             while ((clientMessage = reader.readLine()) != null) {
                 JSONObject clientData = new JSONObject(clientMessage);
-
+                
                 if (clientData.has("getVotes") && clientData.getBoolean("getVotes")) {
                     // Handle request to get the list of available votes
                     sendAvailableVotes(writer);
-                } else if (clientData.has("isAdmin") && clientData.getBoolean("isAdmin")) {
+                } else
+                
+                if (clientData.has("isAdmin") && clientData.getBoolean("isAdmin")) {
                     // Handle admin message to create a vote
-                    handleAdminMessage(clientData);
+                	sendAdminMessage(clientData.toString());
                 } else {
                     // Handle regular client vote message
-                    handleVoteMessage(clientData);
+                	sendVoterMessage(clientData.toString());
                 }
             }
         } catch (IOException e) {
@@ -49,8 +59,9 @@ public class ClientHandler implements Runnable {
         }
     }
 
+    
     private void sendAvailableVotes(PrintWriter writer) {
-		// TODO Auto-generated method stub
+		//  Auto-generated method stub
     	try {
             Connection connection = DriverManager.getConnection("jdbc:postgresql://localhost:5432/users?currentSchema=public", "mouad", "mouad");
             PreparedStatement statement = connection.prepareStatement("SELECT * FROM votes");
@@ -88,90 +99,29 @@ public class ClientHandler implements Runnable {
         }
         return optionsArray;
     }
-
-	private void handleAdminMessage(JSONObject adminData) {
-        // Extract relevant information from the JSON
-        String voteName = adminData.getString("name");
-        String voteDescription = adminData.getString("description");
-        JSONArray optionsArray = adminData.getJSONArray("options");
-
-        // Insert the vote into the database
-        insertVoteIntoDatabase(voteName, voteDescription, optionsArray);
-    }
-
-    private void handleVoteMessage(JSONObject voteData) {
-        // Extract relevant information from the JSON
-        String voteName = voteData.getString("name");
-        String selectedOption = voteData.getString("selectedOption");
-
-        // Process the vote and increment the counter in the database
-        processVoteAndUpdateCounter(voteName, selectedOption);
-    }
     
-    private void insertVoteIntoDatabase(String voteName, String voteDescription, JSONArray optionsArray) {
-        // Implement database connection and insertion logic here
-        // Use JDBC to connect to your PostgreSQL database and execute INSERT statements
-        // You will need to handle exceptions and close resources properly
-    	// Insert the vote information
-        try (Connection connection = DriverManager.getConnection("jdbc:postgresql://localhost:5432/users?currentSchema=public", "mouad", "mouad")) {
-            // Insert vote details
-            String insertVoteQuery = "INSERT INTO votes (name, description) VALUES (?, ?)";
-            try (PreparedStatement voteStatement = connection.prepareStatement(insertVoteQuery)) {
-                voteStatement.setString(1, voteName);
-                voteStatement.setString(2, voteDescription);
-                voteStatement.executeUpdate();
-            }
+	private void sendAdminMessage(String adminMessage) {
+        Properties props = new Properties();
+        props.put("bootstrap.servers", "localhost:9092");
+        props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+        props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
 
-            // Insert options and initialize counters
-            String insertOptionQuery = "INSERT INTO options (vote_id, option_name, vote_count) VALUES (?, ?, 0)";
-            String getVoteIdQuery = "SELECT id FROM votes WHERE name = ?";
-            try (PreparedStatement optionStatement = connection.prepareStatement(insertOptionQuery);
-                 PreparedStatement voteIdStatement = connection.prepareStatement(getVoteIdQuery)) {
-
-                voteIdStatement.setString(1, voteName);
-
-                // Execute the query and get the result set
-                try (ResultSet resultSet = voteIdStatement.executeQuery()) {
-                    // Move the cursor to the first row
-                    if (resultSet.next()) {
-                        int voteId = resultSet.getInt("id");
-
-                        // Check if the voteId is not -1
-                        if (voteId != -1) {
-                            for (int i = 0; i < optionsArray.length(); i++) {
-                                optionStatement.setInt(1, voteId);
-                                optionStatement.setString(2, optionsArray.getString(i));
-                                optionStatement.executeUpdate();
-                            }
-                        }
-                    }
-                }
-            }
-
-
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void processVoteAndUpdateCounter(String voteName, String selectedOption) {
-        // Implement logic to process the vote and update the counter in the database
-        // Use JDBC to connect to your PostgreSQL database and execute UPDATE statements
-        // You will need to handle exceptions and close resources properly
-
-        // Update the counter for the selected option
-        try (Connection connection = DriverManager.getConnection("jdbc:postgresql://localhost:5432/users?currentSchema=public", "mouad", "mouad")) {
-            String updateCounterQuery = "UPDATE options SET vote_count = vote_count + 1 WHERE vote_id IN (SELECT id FROM votes WHERE name = ?) AND option_name = ?";
-            try (PreparedStatement statement = connection.prepareStatement(updateCounterQuery)) {
-                statement.setString(1, voteName);
-                statement.setString(2, selectedOption);
-                statement.executeUpdate();
-            }
-
-        } catch (SQLException e) {
-            e.printStackTrace();
+        try (Producer<String, String> producer = new KafkaProducer<>(props)) {
+            ProducerRecord<String, String> record = new ProducerRecord<>(ADMIN_TOPIC, adminMessage);
+            producer.send(record);
         }
     }
     
-    
+	private void sendVoterMessage(String voterMessage) {
+        Properties props = new Properties();
+        props.put("bootstrap.servers", "localhost:9092");
+        props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+        props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+
+        try (Producer<String, String> producer = new KafkaProducer<>(props)) {
+            ProducerRecord<String, String> record = new ProducerRecord<>(VOTING_TOPIC, voterMessage);
+            producer.send(record);
+        }
+	}
 }
+

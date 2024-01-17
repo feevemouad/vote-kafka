@@ -17,7 +17,7 @@ public class VotingApp {
             while (true) {
                 // Ask the user to choose between creating a vote or voting
                 System.out.println("Welcome to the Voting App!");
-                System.out.println("Type 1 to create a vote (Admin) or 2 to vote (Client): ");
+                System.out.println("Type 1 to create a vote or 2 to vote: ");
                 System.out.println("Type 'exit' to quit.");
                 String userInput = consoleReader.readLine().trim();
 
