@@ -28,7 +28,6 @@ public class AdminClient {
 
             // Create a JSON message for admin to create a vote
             JSONObject adminMessage = new JSONObject();
-            adminMessage.put("isAdmin", true);
             adminMessage.put("name", voteName);
             adminMessage.put("description", voteDescription);
 
